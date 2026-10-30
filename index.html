@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ระบบยืม-คืนอุปกรณ์วิทยาศาสตร์</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f3f6f5;--card:#fff;--ink:#1b2b30;--mute:#5d7078;--line:#d5dfdd;--brand:#0b7a75;--brand-ink:#fff;--warn:#b7791f;--bad:#b83a30;--ok:#2b7a3d;--info:#2f5fa8}
+@media(prefers-color-scheme:dark){:root{--bg:#10191b;--card:#172326;--ink:#e6f0ee;--mute:#93a8a6;--line:#2a3b3e;--brand:#3fbdb5;--brand-ink:#08201f;--warn:#e0a94a;--bad:#ef7d72;--ok:#6cc27f;--info:#7fa8e8}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Noto Sans Thai",system-ui,sans-serif}
+header{background:var(--brand);color:var(--brand-ink);padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+header h1{font-size:1.05rem;margin:0}
+header small{display:block;opacity:.85}
+main{max-width:860px;margin:0 auto;padding:12px 12px 96px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin:0 0 10px}
+.loan{border-left:6px solid var(--line)}
+.loan.pending{border-left-color:var(--warn)}.loan.approved{border-left-color:var(--info)}.loan.borrowed{border-left-color:var(--brand)}
+.loan.overdue,.loan.rejected{border-left-color:var(--bad)}.loan.returned{border-left-color:var(--ok)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grow{flex:1 1 160px}
+input,select,textarea,button{font:inherit;color:inherit}
+input,select,textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card)}
+label{display:block;font-size:.88rem;color:var(--mute);margin:8px 0 3px}
+button{background:var(--brand);color:var(--brand-ink);border:0;border-radius:6px;padding:9px 14px;font-weight:500;cursor:pointer}
+button.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:disabled{opacity:.45;cursor:not-allowed}
+:focus-visible{outline:3px solid var(--info);outline-offset:2px}
+nav{display:flex;gap:6px;margin-bottom:10px;overflow-x:auto}
+nav button{background:var(--card);color:var(--ink);border:1px solid var(--line);white-space:nowrap}
+nav button.on{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
+.tag{font-size:.8rem;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mute)}
+.tag.high{color:var(--bad);border-color:var(--bad)}.tag.medium{color:var(--warn);border-color:var(--warn)}
+.mute{color:var(--mute);font-size:.9rem}
+.qty{width:64px}
+#cartbar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
+#toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:6px;display:none;z-index:9;max-width:90vw}
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);width:min(520px,94vw);padding:16px}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+.hide{display:none!important}
+#login{max-width:360px;margin:12vh auto;padding:0 14px}
+@media(prefers-reduced-motion:no-preference){#toast{transition:opacity .2s}}
+</style>
+</head>
+<body>
+
+<div id="toast" role="status"></div>
+
+<section id="login" class="hide">
+  <div class="card">
+    <h1 style="margin-top:0">ยืม-คืนอุปกรณ์วิทยาศาสตร์</h1>
+    <label for="lu">รหัสผู้ใช้ (รหัสนักเรียน/รหัสครู)</label>
+    <input id="lu" autocomplete="username" inputmode="text">
+    <label for="lp">PIN</label>
+    <input id="lp" type="password" autocomplete="current-password" inputmode="numeric">
+    <p><button id="lgo" style="width:100%">เข้าสู่ระบบ</button></p>
+    <p class="mute">ลืม PIN ให้แจ้งครูผู้ดูแลห้องวิทยาศาสตร์</p>
+  </div>
+</section>
+
+<div id="app" class="hide">
+  <header>
+    <div><h1>ระบบยืม-คืนอุปกรณ์วิทยาศาสตร์</h1><small id="who"></small></div>
+    <button class="sec" id="out" style="color:inherit;border-color:currentColor">ออกจากระบบ</button>
+  </header>
+  <main>
+    <nav id="tabs">
+      <button data-t="eq" class="on">เลือกอุปกรณ์</button>
+      <button data-t="mine">ใบยืมของฉัน</button>
+      <button data-t="mng" class="hide">จัดการใบยืม</button>
+    </nav>
+
+    <section id="t-eq">
+      <div class="row card">
+        <input id="q" class="grow" placeholder="ค้นหาชื่ออุปกรณ์หรือรหัส" aria-label="ค้นหา">
+        <select id="cat" class="grow" aria-label="หมวดวิชา">
+          <option value="">ทุกหมวด</option><option>ฟิสิกส์</option><option>เคมี</option><option>ชีววิทยา</option><option>โลกและอวกาศ</option><option>ทั่วไป</option>
+        </select>
+      </div>
+      <div id="eqlist"></div>
+    </section>
+
+    <section id="t-mine" class="hide"><div id="minelist"></div></section>
+
+    <section id="t-mng" class="hide">
+      <div class="card"><label for="fs" style="margin-top:0">แสดงสถานะ</label>
+        <select id="fs"><option value="">ทั้งหมด</option><option value="pending">รออนุมัติ</option><option value="approved">รอส่งมอบ</option><option value="borrowed">กำลังยืม</option><option value="overdue">เกินกำหนด</option><option value="returned">คืนแล้ว</option><option value="rejected">ไม่อนุมัติ</option></select>
+      </div>
+      <div id="mnglist"></div>
+    </section>
+  </main>
+  <div id="cartbar" class="hide"><span id="cartn"></span><button id="opencart">ขอยืมอุปกรณ์</button></div>
+</div>
+
+<dialog id="dcart">
+  <h2 style="margin-top:0">ขอยืมอุปกรณ์</h2>
+  <div id="cartitems"></div>
+  <label for="f-due">วันที่คืน</label><input id="f-due" type="date">
+  <label for="f-sub">รายวิชา</label><input id="f-sub" placeholder="เช่น ว31101 ฟิสิกส์">
+  <label for="f-exp">ชื่อการทดลอง/กิจกรรม</label><input id="f-exp">
+  <label for="f-grp">ชื่อกลุ่ม (ถ้ามี)</label><input id="f-grp">
+  <label for="f-pur">วัตถุประสงค์</label><textarea id="f-pur" rows="2"></textarea>
+  <div class="row" style="margin-top:12px;justify-content:flex-end">
+    <button class="sec" data-close>ปิด</button><button id="sendloan">ส่งคำขอยืม</button>
+  </div>
+</dialog>
+
+<dialog id="dret">
+  <h2 style="margin-top:0">ตรวจสภาพตอนรับคืน</h2>
+  <div id="retitems"></div>
+  <label for="r-note">หมายเหตุ (ใช้เมื่อพบความเสียหาย)</label><input id="r-note">
+  <div class="row" style="margin-top:12px;justify-content:flex-end">
+    <button class="sec" data-close>ปิด</button><button id="doret">ยืนยันรับคืน</button>
+  </div>
+</dialog>
+
+<script>
+// ตั้งค่า: วาง URL ของ Web App ที่ได้จากการ Deploy Apps Script
+const API_URL = 'https://script.google.com/macros/s/AKfycbyV8XenVMvwbQGDjkKjtl_f4XqaeuWflQPYva6ZUyuqFyfA0gzOM9glDX3VkCWogiSz/exec';
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ST = {pending:'รออนุมัติ',approved:'อนุมัติแล้ว รอรับของ',rejected:'ไม่อนุมัติ',borrowed:'กำลังยืม',returned:'คืนแล้ว',overdue:'เกินกำหนดคืน',cancelled:'ยกเลิก'};
+const COND = {good:'สภาพดี',minor_defect:'ชำรุดเล็กน้อย',damaged:'ชำรุด',lost:'สูญหาย'};
+const RISK = {low:'ความเสี่ยงต่ำ',medium:'ความเสี่ยงปานกลาง',high:'ความเสี่ยงสูง'};
+const S = {token:null, user:null, eq:[], cart:{}, ret:null};
+
+function store(k, v){ try{ v===undefined ? localStorage.getItem(k) : (v===null ? localStorage.removeItem(k) : localStorage.setItem(k,v)); }catch(e){} }
+function load(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function toast(m){ const t=$('#toast'); t.textContent=m; t.style.display='block'; clearTimeout(toast.h); toast.h=setTimeout(()=>t.style.display='none',3500); }
+const fdate = v => v ? new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}) : '-';
+
+async function api(action, data){
+  const r = await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,token:S.token,data})});
+  const j = await r.json();
+  if(!j.ok){ if(j.error==='SESSION_EXPIRED'){ logout(); throw new Error('หมดเวลาเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่'); } throw new Error(j.error); }
+  return j.data;
+}
+async function run(btn, fn){
+  if(btn) btn.disabled = true;
+  try{ await fn(); }catch(e){ toast(e.message || 'เกิดข้อผิดพลาด'); }
+  if(btn) btn.disabled = false;
+}
+
+// ---------- เข้าสู่ระบบ ----------
+function showLogin(){ $('#app').classList.add('hide'); $('#login').classList.remove('hide'); }
+function logout(){ store('tk',null); store('us',null); S.token=null; S.user=null; showLogin(); }
+$('#out').onclick = logout;
+$('#lgo').onclick = e => run(e.target, async()=>{
+  const r = await api('login',{user_id:$('#lu').value, pin:$('#lp').value});
+  S.token=r.token; S.user=r.user; store('tk',r.token); store('us',JSON.stringify(r.user)); $('#lp').value=''; start();
+});
+$('#lp').onkeydown = e => { if(e.key==='Enter') $('#lgo').click(); };
+
+async function start(){
+  $('#login').classList.add('hide'); $('#app').classList.remove('hide');
+  const u=S.user, roleTh={student:'นักเรียน',teacher:'ครู',lab_staff:'เจ้าหน้าที่ห้องวิทยาศาสตร์',head_dept:'หัวหน้ากลุ่มสาระ',executive:'ผู้บริหาร',admin:'ผู้ดูแลระบบ'}[u.role]||u.role;
+  $('#who').textContent = u.full_name+' ('+roleTh+')';
+  S.canView = ['teacher','lab_staff','head_dept','executive','admin'].includes(u.role);
+  S.canApprove = ['teacher','lab_staff','head_dept','admin'].includes(u.role);
+  S.isStaff = ['lab_staff','admin'].includes(u.role);
+  $('[data-t=mng]').classList.toggle('hide', !S.canView);
+  tab('eq');
+  await run(null, loadEq);
+}
+
+// ---------- แท็บ ----------
+function tab(t){
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  ['eq','mine','mng'].forEach(x=>$('#t-'+x).classList.toggle('hide',x!==t));
+  $('#cartbar').classList.toggle('hide', t!=='eq' || !Object.keys(S.cart).length);
+  if(t==='mine') run(null,()=>loadLoans('mine'));
+  if(t==='mng') run(null,()=>loadLoans('mng'));
+}
+$('#tabs').onclick = e => { if(e.target.dataset.t) tab(e.target.dataset.t); };
+$('#fs').onchange = () => run(null,()=>loadLoans('mng'));
+
+// ---------- อุปกรณ์ ----------
+async function loadEq(){ S.eq = await api('listEquipment'); renderEq(); }
+function renderEq(){
+  const q=$('#q').value.trim().toLowerCase(), c=$('#cat').value;
+  const list = S.eq.filter(e=>(!c||e.category===c)&&(!q||(e.name+e.asset_id).toLowerCase().includes(q)));
+  $('#eqlist').innerHTML = list.length ? list.map(e=>{
+    const inCart=S.cart[e.asset_id]||0, left=e.available_qty-inCart;
+    return `<div class="card row">
+      <div class="grow"><strong>${esc(e.name)}</strong>
+        <div class="mute">${esc(e.asset_id)} · ${esc(e.category)} · เหลือ ${e.available_qty}/${e.total_qty} ${esc(e.unit)}</div>
+        <div class="row"><span class="tag ${esc(e.risk_level)}">${RISK[e.risk_level]||''}</span>${e.requires_approval?'<span class="tag">ต้องขออนุมัติ</span>':''}</div></div>
+      <button ${left<1?'disabled':''} data-add="${esc(e.asset_id)}">${inCart?'เพิ่มอีก 1 ('+inCart+')':'เลือก'}</button></div>`;
+  }).join('') : '<p class="mute">ไม่พบอุปกรณ์ที่ตรงกับการค้นหา ลองเปลี่ยนคำค้นหรือเลือกทุกหมวด</p>';
+  updateCartBar();
+}
+$('#q').oninput = renderEq; $('#cat').onchange = renderEq;
+$('#eqlist').onclick = e => { const id=e.target.dataset.add; if(id){ S.cart[id]=(S.cart[id]||0)+1; renderEq(); } };
+function updateCartBar(){
+  const n=Object.values(S.cart).reduce((a,b)=>a+b,0);
+  $('#cartn').textContent = 'เลือกแล้ว '+n+' ชิ้น';
+  $('#cartbar').classList.toggle('hide', !n);
+}
+
+// ---------- ตะกร้า / ส่งคำขอ ----------
+$('#opencart').onclick = () => {
+  $('#cartitems').innerHTML = Object.keys(S.cart).map(id=>{
+    const e=S.eq.find(x=>x.asset_id===id);
+    return `<div class="row" style="margin-bottom:6px"><span class="grow">${esc(e.name)}</span>
+      <input class="qty" type="number" min="0" max="${e.available_qty}" value="${S.cart[id]}" data-q="${esc(id)}" aria-label="จำนวน ${esc(e.name)}"></div>`;
+  }).join('');
+  const d=new Date(); d.setDate(d.getDate()+1); $('#f-due').value=d.toISOString().slice(0,10);
+  $('#f-due').min=new Date().toISOString().slice(0,10);
+  $('#dcart').showModal();
+};
+$('#cartitems').oninput = e => { const id=e.target.dataset.q; if(id){ const v=Number(e.target.value)||0; v>0 ? S.cart[id]=v : delete S.cart[id]; } };
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>b.closest('dialog').close());
+$('#sendloan').onclick = e => run(e.target, async()=>{
+  const items=Object.keys(S.cart).map(id=>({asset_id:id,qty:S.cart[id]}));
+  const r = await api('createLoan',{items,due_date:$('#f-due').value,subject:$('#f-sub').value,experiment_name:$('#f-exp').value,group_name:$('#f-grp').value,purpose:$('#f-pur').value});
+  S.cart={}; $('#dcart').close();
+  toast(r.status==='pending'?'ส่งคำขอแล้ว รอครูอนุมัติ':'ส่งคำขอแล้ว มารับอุปกรณ์ที่ห้องวิทยาศาสตร์ได้เลย');
+  await loadEq(); tab('mine');
+});
+
+// ---------- ใบยืม ----------
+async function loadLoans(kind){
+  const data = kind==='mng' ? {scope:'all',status:$('#fs').value} : {scope:'mine'};
+  const list = await api('listLoans',data);
+  const box = kind==='mng' ? $('#mnglist') : $('#minelist');
+  box.innerHTML = list.length ? list.map(l=>loanCard(l,kind==='mng')).join('') : '<p class="mute">ยังไม่มีใบยืมในรายการนี้</p>';
+  box._list = list;
+}
+function loanCard(l,mng){
+  let b='';
+  if(mng){
+    if(l.status==='pending'&&S.canApprove) b=`<button data-a="ok" data-id="${l.loan_id}">อนุมัติ</button><button class="sec" data-a="no" data-id="${l.loan_id}">ไม่อนุมัติ</button>`;
+    if(l.status==='approved'&&S.isStaff) b=`<button data-a="out" data-id="${l.loan_id}">ส่งมอบอุปกรณ์</button>`;
+    if((l.status==='borrowed'||l.status==='overdue')&&S.isStaff) b=`<button data-a="ret" data-id="${l.loan_id}">รับคืน</button>`;
+  }
+  return `<div class="card loan ${l.status}">
+    <div class="row"><strong class="grow">${esc(l.experiment_name||l.subject||l.loan_id)}</strong><span class="tag">${ST[l.status]||l.status}</span></div>
+    <div class="mute">${mng?esc(l.user_name)+' · ':''}${esc(l.class_room)} · ${esc(l.loan_id)}</div>
+    <div>${l.items.map(i=>esc(i.name)+' ×'+i.qty+(i.condition_in?' ('+COND[i.condition_in]+')':'')).join('<br>')}</div>
+    <div class="mute">ขอยืม ${fdate(l.request_date)} · คืนภายใน ${fdate(l.due_date)}${l.return_date?' · คืนจริง '+fdate(l.return_date):''}</div>
+    ${l.reject_reason?`<div class="mute">เหตุผลที่ไม่อนุมัติ: ${esc(l.reject_reason)}</div>`:''}
+    ${b?`<div class="row" style="margin-top:8px">${b}</div>`:''}</div>`;
+}
+$('#mnglist').onclick = e => {
+  const a=e.target.dataset.a, id=e.target.dataset.id; if(!a) return;
+  if(a==='ok') run(e.target,async()=>{ await api('approveLoan',{loan_id:id,approve:true}); toast('อนุมัติแล้ว'); await loadLoans('mng'); });
+  if(a==='no'){ const reason=prompt('เหตุผลที่ไม่อนุมัติ'); if(reason===null) return;
+    run(e.target,async()=>{ await api('approveLoan',{loan_id:id,approve:false,reason}); toast('บันทึกว่าไม่อนุมัติแล้ว'); await loadLoans('mng'); }); }
+  if(a==='out') run(e.target,async()=>{ await api('checkoutLoan',{loan_id:id}); toast('ส่งมอบอุปกรณ์แล้ว'); await loadLoans('mng'); await loadEq(); });
+  if(a==='ret'){
+    S.ret=$('#mnglist')._list.find(x=>x.loan_id===id);
+    $('#retitems').innerHTML=S.ret.items.map(i=>`<div class="row" style="margin-bottom:6px"><span class="grow">${esc(i.name)} ×${i.qty}</span>
+      <select data-c="${esc(i.asset_id)}" aria-label="สภาพ ${esc(i.name)}">${Object.keys(COND).map(k=>`<option value="${k}">${COND[k]}</option>`).join('')}</select></div>`).join('');
+    $('#r-note').value=''; $('#dret').showModal();
+  }
+};
+$('#doret').onclick = e => run(e.target, async()=>{
+  const items=[...document.querySelectorAll('#retitems select')].map(s=>({asset_id:s.dataset.c,condition_in:s.value}));
+  await api('returnLoan',{loan_id:S.ret.loan_id,items,note:$('#r-note').value});
+  $('#dret').close(); toast('รับคืนเรียบร้อย'); await loadLoans('mng'); await loadEq();
+});
+
+// ---------- เริ่มต้น ----------
+(function init(){
+  if(API_URL.startsWith('PASTE')){ $('#login').classList.remove('hide'); toast('ยังไม่ได้ตั้งค่า API_URL ในไฟล์ Index.html'); return; }
+  const tk=load('tk'), us=load('us');
+  if(tk && us){ try{ S.token=tk; S.user=JSON.parse(us); start(); return; }catch(e){} }
+  showLogin();
+})();
+</script>
+</body>
+</html>
